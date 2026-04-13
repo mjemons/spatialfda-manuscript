@@ -31,6 +31,8 @@ snakemake --cores <nCores> --sdm conda apptainer
 
 If you want to use only the `conda` environment without `apptainer` you might need to specify a correct `python` installation.
 
+It can happen that you run into an `apptainer` error when setting up the environment. In this case please specify a new `tmp` directory via `--apptainer-args`
+
 ### Citation
 
 Include citation after bioRxiv upload
