@@ -1,0 +1,12 @@
+channels:
+   - conda-forge
+   - bioconda
+dependencies:
+   - r-base=4.4.3
+   - r-dplyr=1.1.4
+   - r-ggplot2=3.5.1
+   - bioconda::bioconductor-spatialexperiment=1.16.0
+   - conda-forge::r-devtools=2.4.5
+   - conda-forge::r-lme4=1.1_38
+   - conda-forge::r-spatstat.geom=3.6_0
+   - conda-forge::r-lmertest=3.2_0
