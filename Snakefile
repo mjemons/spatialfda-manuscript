@@ -10,7 +10,10 @@ FILE = ["centroids", "adjacency"]
 FOV = list(range(1,11))
 SUBFOV = 1
 PROB = {"ctrl": 0.5, "pert1": 0.5, "pert2": 0.4, "pert3": 0.3} 
-METHOD = ["spatialFDAG", "spatialFDAL", "spicyRMM", "spicyRLM", "spaceANOVAUni", "spaceANOVAMulti", "smoppix", "intensityMM", "mxfdaFM", "mxfdaMM"]
+METHOD = ["spatialFDAG", "spatialFDAGAdj", "spatialFDAGNSW",
+ "spatialFDAL", "spatialFDALAdj", "spatialFDALNSW", 
+ "spicyRMM", "spicyRLM", "spaceANOVAUni", "spaceANOVAMulti", "smoppix", 
+ "intensityMM", "mxfdaFM", "mxfdaMM"]
 REP = list(range(1,501))
 STD = [1]
 PROP = [0.15, 0.25, 0.6]
@@ -26,17 +29,25 @@ input_merge = list()
 for val in TYP:
   input_merge += expand("outs/{rep}/{typ}/{sim}/dataframe-fov-{prob}-{std}-{prop}-{sim}-{rep}-{fov}-{subfov}.csv", typ = val, sim = SIM, fov = FOV, prob = PROB[val], subfov = SUBFOV, allow_missing=True)
 
-container: "docker://condaforge/mambaforge:24.9.2-0"
+container: "docker://continuumio/miniconda3:26.5.3"
 
 rule all:
     input: 
             res_pvalues = expand("outs/pValues/pValues-{method}-{std}-{prop}-{comp}.rds", method = METHOD, std = STD, prop = PROP, comp = COMP),
             res_powerCurve = expand("outs/powerCurve.pdf"),
-            res_iCOBRA = ["outs/TPRFDP.pdf", "outs/TPRFPR.pdf"],
+            res_iCOBRA = ["outs/TPRFDP.pdf", "outs/TPRFPR.pdf",
+            "outs/TPRFDPSupp.pdf", "outs/TPRFPRSupp.pdf"],
             res_plotSpicyRSim = "outs/manyRROC.pdf",
             res_marginalIntensities = "outs/marginal_simulated_intensities.pdf",
-            res_diabetesExample = ["outs/intensityBoxplot.pdf", "outs/heatmapComb.pdf", "outs/residualPlot.pdf", "outs/qqdeltaTh.pdf"],
-            res_runtime = ["outs/runtimes.pdf", "outs/runtimes.rds"]
+            res_diabetesExample = ["outs/intensityBoxplot.pdf", "outs/heatmapComb.pdf", 
+            "outs/residualPlot.pdf", "outs/qqdeltaTh.pdf", "outs/heatmapCombSuppA.pdf",
+            "outs/heatmapCombSuppB.pdf", "outs/exampleFOVs.pdf"],
+            res_runtime = ["outs/runtimes.pdf", "outs/runtimes.rds"],
+            res_plotSimData = ["outs/plotSimData.pdf", "outs/plotCurves.pdf"],
+            res_diabetesExampleLOO = ["outs/diabetesExampleLOO.rds", 
+            "outs/diabetesExampleLOOPlot.pdf"],
+            res_cordsExample = ["outs/plotCords.pdf", "outs/fbplotTF.pdf", 
+            "outs/fbplotVF.pdf",]
 
 rule clone_simulation_repo:
     output:
@@ -98,37 +109,34 @@ rule df_to_spe:
     script:
             "code/df_to_spe.R"   
 
-rule install_spatialFDA:
-    output: touch = "outs/spatialFDA_installed"  
+rule plotSimData:
+    input: rds = "outs/15/spe_total-1-0.25.rds"
+    output: pltSims = "outs/plotSimData.pdf",
+            pltCurves = "outs/plotCurves.pdf"
     conda: "envs/spatialFDA.yml"
     script:
-            "code/install_spatialFDA.R"
+            "code/plotSimData.R"
             
 rule spatialFDAG:
-    input:  software = "outs/spatialFDA_installed",
-            rds = "outs/{rep}/spe_total-{std}-{prop}.rds"
-    output: rds = "outs/{rep}/spatialFDAG-{std}-{prop}-{comp}.rds"
+    input:  rds = "outs/{rep}/spe_total-{std}-{prop}.rds"
+    output: rdsG = "outs/{rep}/spatialFDAG-{std}-{prop}-{comp}.rds",
+            rdsGNSW = "outs/{rep}/spatialFDAGNSW-{std}-{prop}-{comp}.rds",
+            rdsGAdj = "outs/{rep}/spatialFDAGAdj-{std}-{prop}-{comp}.rds"
     conda: "envs/spatialFDA.yml"
     script:
             "code/spatialFDAG.R"   
 
 rule spatialFDAL:
-    input:  software = "outs/spatialFDA_installed",
-            rds = "outs/{rep}/spe_total-{std}-{prop}.rds"
-    output: rds = "outs/{rep}/spatialFDAL-{std}-{prop}-{comp}.rds"
+    input:  rds = "outs/{rep}/spe_total-{std}-{prop}.rds"
+    output: rdsL = "outs/{rep}/spatialFDAL-{std}-{prop}-{comp}.rds",
+            rdsLNSW = "outs/{rep}/spatialFDALNSW-{std}-{prop}-{comp}.rds",
+            rdsLAdj = "outs/{rep}/spatialFDALAdj-{std}-{prop}-{comp}.rds"
     conda: "envs/spatialFDA.yml"
     script:
             "code/spatialFDAL.R"
-
-rule install_spaceANOVA:
-    output: touch = "outs/spaceANOVA_installed"
-    conda: "envs/spaceANOVA.yml"
-    script:
-	    "code/install_spaceANOVA.R"
            
 rule spaceANOVA:
-    input: softare = "outs/spaceANOVA_installed",
-           rds = "outs/{rep}/spe_total-{std}-{prop}.rds"
+    input: rds = "outs/{rep}/spe_total-{std}-{prop}.rds"
     output: rdsUni = "outs/{rep}/spaceANOVAUni-{std}-{prop}-{comp}.rds",
             rdsMulti = "outs/{rep}/spaceANOVAMulti-{std}-{prop}-{comp}.rds" 
     conda: "envs/spaceANOVA.yml"
@@ -152,15 +160,8 @@ rule spicyRLM:
     script:
             "code/spicyRLM.R"
 
-rule install_smoppix:
-    output: touch = "outs/smoppix_installed"
-    conda: "envs/smoppix.yml"
-    script:
-            "code/install_smoppix.R"
-
 rule smoppix:
-    input:  software = "outs/smoppix_installed",
-            rds = "outs/{rep}/spe_total-{std}-{prop}.rds"
+    input:  rds = "outs/{rep}/spe_total-{std}-{prop}.rds"
     output: rds = "outs/{rep}/smoppix-{std}-{prop}-{comp}.rds",
     conda: "envs/smoppix.yml"
     threads: 1
@@ -175,15 +176,8 @@ rule intensityMM:
     script:
             "code/intensitytMM.R"
 
-rule install_mxfda:
-    output: touch = "outs/mxfda_installed"
-    conda: "envs/mxfda.yml"
-    script:
-            "code/install_mxfda.R"
-
 rule mxfdaFM:
-    input: software = "outs/mxfda_installed",
-           rds = "outs/{rep}/spe_total-{std}-{prop}.rds"
+    input: rds = "outs/{rep}/spe_total-{std}-{prop}.rds"
     output: rds = "outs/{rep}/mxfdaFM-{std}-{prop}-{comp}.rds",
     conda: "envs/mxfda.yml"
     threads: 1
@@ -191,8 +185,7 @@ rule mxfdaFM:
             "code/mxfdaFM.R"
 
 rule mxfdaMM:
-    input: software = "outs/mxfda_installed",
-           rds = "outs/{rep}/spe_total-{std}-{prop}.rds"
+    input: rds = "outs/{rep}/spe_total-{std}-{prop}.rds"
     output: rds = "outs/{rep}/mxfdaMM-{std}-{prop}-{comp}.rds",
     conda: "envs/mxfda.yml"
     threads: 1
@@ -218,13 +211,14 @@ rule powerCurve:
 rule iCOBRA:
     input: ls = expand("outs/pValues/pValues-{method}-{std}-{prop}-{comp}.rds", method = METHOD, comp = COMP, std = STD, prop = PROP) 
     output: plt = "outs/TPRFDP.pdf",
-            roc = "outs/TPRFPR.pdf"
+            roc = "outs/TPRFPR.pdf",
+            pltSupp = "outs/TPRFDPSupp.pdf",
+            rocSupp = "outs/TPRFPRSupp.pdf"
     conda: "envs/powerCurve.yml"
     script:
             "code/iCOBRA.R"
 
 rule spicyRsim:
-    input: software = "outs/spatialFDA_installed"
     output: rds = "outs/manyRsim.rds"
     conda: "envs/spatialFDA.yml"
     threads: 10
@@ -233,8 +227,9 @@ rule spicyRsim:
 
 rule plotSpicyRSim:
      input: rds = "outs/manyRsim.rds"
-     output: plt = "outs/manyRROC.pdf"
-     conda: "envs/spatialFDA.yml"
+     output: roc = "outs/manyRROC.pdf",
+             fdp = "outs/manyRFDP.pdf"
+     conda: "envs/powerCurve.yml"
      script:
             "code/plotSpicyRSim.R"
 
@@ -259,11 +254,69 @@ rule diabetesExample:
      script:
             "code/diabetesExample.R"
 
+rule diabetesExampleFOVs:
+     output: plt = "outs/exampleFOVs.pdf"
+     conda: "envs/diabetesExample.yml"
+     script:
+            "code/diabetesExampleFOVs.R"
+
+rule diabetesExampleLOO:
+     output: rds = "outs/diabetesExampleLOO.rds"
+     conda: "envs/diabetesExample.yml"
+     threads: 15
+     script:
+            "code/diabetesExampleLOO.R"
+
+rule diabetesExampleLOOPlot:
+     input: rds = "outs/diabetesExampleLOO.rds"
+     output: plt = "outs/diabetesExampleLOOPlot.pdf"
+     conda: "envs/diabetesExample.yml"
+     script:
+            "code/diabetesExampleLOOPlot.R"
+
 rule diabetesExamplePlot:
      input: rds = "outs/diabetesExample.rds"
      output: heatmap = "outs/heatmapComb.pdf",
+             heatmapSuppA = "outs/heatmapCombSuppA.pdf",
+             heatmapSuppB = "outs/heatmapCombSuppB.pdf",
              qcPlot = "outs/residualPlot.pdf",
              qcPlotDeltaTh = "outs/qqdeltaTh.pdf"
      conda: "envs/diabetesExample.yml"
      script:
             "code/diabetesExamplePlot.R"
+
+rule downloadCordsData:
+    output:
+        rds="data/Cords/SingleCellExperiment Objects/sce_all_annotated.rds"
+    params:
+        zipfile="data/raw/cords2024/SingleCellExperiment_Objects.zip"
+    shell:
+        """
+        mkdir -p "$(dirname "{params.zipfile}")"
+        wget -c 'https://zenodo.org/records/7961844/files/SingleCellExperiment%20Objects.zip?download=1' \
+            -O "{params.zipfile}"
+        mkdir -p "data/Cords"
+
+        python -m zipfile -e \
+            "{params.zipfile}" \
+            "data/Cords"
+        """
+
+rule CordsExample:
+     input: rds = "data/Cords/SingleCellExperiment Objects/sce_all_annotated.rds"
+     output: rds = "outs/cords_results.rds"
+     conda: "envs/diabetesExample.yml"
+     threads: 10
+     script:
+            "code/cordsExample.R"
+
+rule CordsExamplePlot:
+     input: rds = "outs/cords_results.rds",
+            sce = "data/Cords/SingleCellExperiment Objects/sce_all_annotated.rds"
+     output: pCords = "outs/plotCords.pdf",
+             pCordsSupp = "outs/pCordsSupp.pdf",
+             fbplotTF = "outs/fbplotTF.pdf",
+             fbplotVF = "outs/fbplotVF.pdf",
+     conda: "envs/diabetesExample.yml"
+     script:
+            "code/cordsExamplePlot.R"

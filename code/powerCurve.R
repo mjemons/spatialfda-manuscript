@@ -12,11 +12,13 @@ saveRDS(df, "outs/pvalueDF.rds")
 df_plt <- df %>% group_by(method, comp, std, prop) %>% count(p.value < 0.05) %>%           
     mutate(power = prop.table(n)) %>%
     filter(`p.value < 0.05` == TRUE)
-labels <- c("0", "10", "20", "30", "40", "50", "60", "70", "80")
+labels <- c("0", "10", "20")
 
 #add a mutate step to have shapes by method and then colour by method flavour
 df_plt <- df_plt %>% mutate(method_class = case_when(
 		method == "spatialFDAG" | method == "spatialFDAL" ~ "spatialFDA",
+    method == "spatialFDAGNSW" | method == "spatialFDALNSW" ~ "spatialFDA",
+    method == "spatialFDAGAdj" | method == "spatialFDALAdj" ~ "spatialFDA",
 		method == "spicyRLM" | method == "spicyRMM" ~ "spicyR",
 		method == "spaceANOVAUni" | method == "spaceANOVAMulti" ~ "spaceANOVA",
 		method == "smoppix" ~ "smoppix",
@@ -32,16 +34,37 @@ df_plt <- df_plt %>%
     method == "spaceANOVAUni" ~ "SpaceANOVA.Uni",
     method == "spaceANOVAMulti" ~ "SpaceANOVA.Multi",
     method == "spatialFDAL" ~ "spatialFDA.L",
+		method == "spatialFDALAdj" ~ "spatialFDA.L.Adj",
+		method == "spatialFDALNSW" ~ "spatialFDA.L.NSW",
     method == "spatialFDAG" ~ "spatialFDA.G",
+		method == "spatialFDAGAdj" ~ "spatialFDA.G.Adj",
+		method == "spatialFDAGNSW" ~ "spatialFDA.G.NSW",
     method == "smoppix" ~ "smoppix",
 		method == "intensityMM" ~ "intensity.MM",
 		method == "mxfdaFM" ~ "mxfda",
 		method == "mxfdaMM" ~ "mxfda.MM"
   )) 
 
-colors <- c(intensity.MM = "#A6CEE3", smoppix = "#1F78B4", SpaceANOVA.Uni = "#33A02C", SpaceANOVA.Multi = "#B2DF8A",
-	 spatialFDA.L = "#E31A1C", spatialFDA.G = "#FB9A99", spicyR.LM ="#FDBF6F", spicyR.MM = "#FF7F00", mxfda = "#CAB2D6",
-	mxfda.MM = "#6A3D9A")
+colors <- c(
+  intensity.MM         = "#A6CEE3",
+  smoppix              = "#1F78B4",
+  SpaceANOVA.Uni       = "#33A02C",
+  SpaceANOVA.Multi     = "#B2DF8A",
+
+  spatialFDA.L         = "#E31A1C",
+  spatialFDA.L.Adj     = "#B2182B",
+  spatialFDA.L.NSW     = "#EF8A62",
+
+  spatialFDA.G         = "#FB9A99",
+  spatialFDA.G.Adj     = "#D6604D",
+  spatialFDA.G.NSW     = "#FDDBC7",
+
+  spicyR.LM            = "#FDBF6F",
+  spicyR.MM            = "#FF7F00",
+
+  mxfda                = "#CAB2D6",
+  mxfda.MM             = "#6A3D9A"
+)
 
 p <- ggplot(df_plt, aes(x = comp, y = power, col = as.factor(method), group = as.factor(method), shape = as.factor(method_class)), linewidth = 1) + 
        	geom_point() + 
@@ -61,15 +84,33 @@ ggplot2::ggsave(snakemake@output[["plt"]], width = 10, height = 10)
 df_dens <- df %>% group_by(method, comp, std, prop) %>% filter(comp == "pert1")
 df_dens$plotting_id <- paste0(df_dens$std, "|", df_dens$prop)
 
+df_dens <- df_dens %>%
+  mutate(method = case_when(
+    method == "spicyRLM" ~ "spicyR.LM",
+    method == "spicyRMM" ~ "spicyR.MM",
+    method == "spaceANOVAUni" ~ "SpaceANOVA.Uni",
+    method == "spaceANOVAMulti" ~ "SpaceANOVA.Multi",
+    method == "spatialFDAL" ~ "spatialFDA.L",
+		method == "spatialFDALAdj" ~ "spatialFDA.L.Adj",
+		method == "spatialFDALNSW" ~ "spatialFDA.L.NSW",
+    method == "spatialFDAG" ~ "spatialFDA.G",
+		method == "spatialFDAGAdj" ~ "spatialFDA.G.Adj",
+		method == "spatialFDAGNSW" ~ "spatialFDA.G.NSW",
+    method == "smoppix" ~ "smoppix",
+		method == "intensityMM" ~ "intensity.MM",
+		method == "mxfdaFM" ~ "mxfda",
+		method == "mxfdaMM" ~ "mxfda.MM"
+  )) 
+
 #inspired from Simone Tiberi distinct paper figure 3
-q <- ggplot(df_dens, aes(`p.value`, fill = std)) + 
+q <- ggplot(df_dens, aes(`p.value`, fill = prop)) + 
   geom_histogram(breaks = seq(0, 1, 0.05)) +
   theme_light() +  
   facet_wrap(~ method, scales = "free_y") +
   scale_fill_brewer(palette = "Paired") +
   scale_color_brewer(palette = "Paired") +
-        guides(fill=guide_legend(title="noise"),
-	       col =guide_legend(title="noise"))
+        guides(fill=guide_legend(title="proportion"),
+	       col =guide_legend(title="proportion"))
   
 ggplot2::ggsave("outs/pValueNull.pdf", width = 10, height = 7)
 

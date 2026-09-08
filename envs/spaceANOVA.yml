@@ -1,14 +1,14 @@
 channels:
+   - https://prefix.dev/almost-conductor
    - conda-forge
    - bioconda
 dependencies:
-   - conda-forge::r=4.4.0
-   - r-dplyr=1.1.4
-   - r-ggplot2=3.5.1
-   - bioconda::bioconductor-spatialexperiment=1.16.0
-   - conda-forge::r-devtools=2.4.5
-   - conda-forge::r-spatstat=3.3_3
-   - conda-forge::r-tidyr=1.3.1
-   - conda-forge::r-dplyr=1.1.4
-   - conda-forge::r-ggplot2
+   - conda-forge::r=4.5
+   - r-dplyr
+   - r-ggplot2
+   - bioconda::bioconductor-spatialexperiment=1.20.0
+   - conda-forge::r-spatstat=3.5_0
+   - conda-forge::r-tidyverse=2.0.0
    - conda-forge::r-gridextra
+   - r-fda.usc
+   - r-spaceanova=0.1.0

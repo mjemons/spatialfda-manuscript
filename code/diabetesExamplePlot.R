@@ -1,23 +1,109 @@
+### coded by hand for G function, generalised to plot both G and L by 
+### claude.ai
+
 library("dplyr")
 library("ggplot2"); theme_set(theme_light())
 library("patchwork")
 library("spatialFDA")
 library("tidyr")
+library("spicyR")
 
-res <- readRDS(snakemake@input[["rds"]])
+out <- readRDS(snakemake@input[["rds"]])
+resG <- out$G
+resL <- out$L
+resSpicyRMM <- out$spicyRMM
+resSmoppix <- out$smoppix
 
-### Heatmap figure
+## reshape data
+coefDf <- resSpicyRMM$coefficient
+coefDf$pair <- rownames(coefDf)
+coefDfLong <- coefDf %>%
+  as.data.frame() %>%
+  pivot_longer(
+    cols = -c(pair),
+    names_to = "coefficient",
+    values_to = "Estimate"
+  )
 
-p1 <- plotCrossHeatmap(res, coefficientsToPlot = c("conditionLong_duration(x)", "conditionOnset(x)"), QCThreshold = 1e-5, QCMetric = "medianMinIntensity")
-p1 <- p1 + 
-   guides(shape = "none") +
-   labs(color = "mean coefficient") +
-   theme(text = element_text(size = 19), legend.position = "bottom", legend.text = element_text(angle=45, vjust = 0.1)) + 
-   facet_wrap(~factor(coefficient, levels = c("conditionOnset(x)", "conditionLong_duration(x)"), labels = c("conditionOnset(x)" = "Onset", "conditionLong_duration(x)" = "Long-Duration")))
+pvalDf <- resSpicyRMM$p.value
+pvalDf$pair <- rownames(pvalDf)
+pvalDfLong <- pvalDf %>%
+  as.data.frame() %>%
+  pivot_longer(
+    cols = -c(pair),
+    names_to = "coefficient",
+    values_to = "p.value"
+  )
 
-mdlDeltaTh <- res$delta_Th$mdl
+resSpicyR_long <- coefDfLong %>%
+  dplyr::left_join(
+    pvalDfLong,
+    by = c("pair", "coefficient")
+  ) %>%
+  separate(pair, into = c("cell1", "cell2"), sep = "__", remove = FALSE)
 
-metricResDeltaTh <- res$delta_Th$metricRes
+resSmoppix <- resSmoppix %>%
+  separate(pair, into = c("cell1", "cell2"), sep = "--", remove = FALSE) %>%
+  rename(p.value = "Pr(>|t|)") %>%
+  mutate(coefficient = recode(
+      coefficient,
+      "patient_stageOnset" = "conditionOnset",
+      "patient_stageLong-duration" = "conditionLong-duration"
+    )
+  )
+
+buildHeatmap <- function(res) {
+  p <- plotCrossHeatmap(res, coefficientsToPlot = c("conditionLong_duration(x)", "conditionOnset(x)"), QCThreshold = 1e-5, QCMetric = "medianMinIntensity")
+  p <- p +
+    guides(shape = "none") +
+    labs(color = "mean coefficient") +
+    theme(text = element_text(size = 19), legend.position = "bottom", legend.text = element_text(angle = 45, vjust = 0.1)) +
+    facet_wrap(~factor(coefficient, levels = c("conditionOnset(x)", "conditionLong_duration(x)"), labels = c("conditionOnset(x)" = "Onset", "conditionLong_duration(x)" = "Long-Duration")))
+  return(p)
+}
+
+heatmapCustom <- function(df){
+  df[["adj.p-value"]] <- stats::p.adjust(df[["p.value"]], method = "BH")
+  df <-  dplyr::filter(df, coefficient != "(Intercept)") 
+  p <- ggplot(df, aes(x = .data[["cell1"]], y = .data[["cell2"]])) +
+    geom_point(aes(size = -log10(.data[["adj.p-value"]] + 0.001),
+                  color = .data[["Estimate"]]))+
+    geom_point(aes(size = -log10(.data[["adj.p-value"]] + 0.001)),
+              shape = 1,colour = "black")+
+    scale_colour_gradient2(midpoint = 0,
+                            high = scales::muted("red"),
+                            mid = "white",
+                            low = scales::muted("blue"),
+                            na.value = "black") +
+    scale_x_discrete(guide = guide_axis(angle = 50)) +
+    guides(shape = "none") +
+    labs(color = "mean coefficient") +
+    theme(text = element_text(size = 19), legend.position = "bottom", legend.text = element_text(angle = 45, vjust = 0.1)) +
+    facet_wrap(~factor(coefficient, levels = c("conditionOnset", "conditionLong-duration"), labels = c("conditionOnset" = "Onset", "conditionLong-duration" = "Long-Duration")))
+  return(p)
+}
+
+### Main heatmap figure (resG only, as before)
+
+p1 <- buildHeatmap(resG) + ggtitle("Diabetes discoveries spatialFDA.G")
+
+### Supplement: resL heatmap only
+
+p1L <- buildHeatmap(resL) + ggtitle("Diabetes discoveries spatialFDA.L")
+pSmoppix <- heatmapCustom(resSmoppix) + ggtitle("Diabetes discoveries smoppix")
+pSpicyR <- heatmapCustom(resSpicyR_long) + ggtitle("Diabetes discoveries spicyRMM")
+pHeatmapMerged <- p1 / p1L + plot_annotation(tag_levels = 'A') & 
+  theme(plot.tag = element_text(size = 20))
+ggsave(snakemake@output[["heatmapSuppA"]], plot = pHeatmapMerged, width = 12, height = 14)
+pHeatmapMerged <- pSmoppix / pSpicyR + plot_annotation(tag_levels = 'A') & 
+  theme(plot.tag = element_text(size = 20))
+ggsave(snakemake@output[["heatmapSuppB"]], plot = pHeatmapMerged, width = 12, height = 14)
+
+### Everything below uses resG only
+
+mdlDeltaTh <- resG$delta_Th$mdl
+
+metricResDeltaTh <- resG$delta_Th$metricRes
 
 metricResDeltaTh$ID <- factor(paste0(
     metricResDeltaTh$patient_stage, "|", metricResDeltaTh$patient_id
@@ -39,10 +125,6 @@ metricResDeltaTh$ID <- paste0(
     metricResDeltaTh$patient_stage, "x", metricResDeltaTh$patient_id,
     "x", metricResDeltaTh$image_number
 )
-
-collector <- plotFbPlot(metricResDeltaTh, "r", "rs", "patient_stage")
-
-summary(mdlDeltaTh)
 
 plotMdlCustom <- function(mdl, predictor, shift = NULL) {
     # type checking
@@ -79,9 +161,9 @@ plotMdlCustom <- function(mdl, predictor, shift = NULL) {
     return(p)
 }
 
-plotLs <- lapply(colnames(res$delta_Th$designmat), plotMdlCustom,
-    mdl = res$delta_Th$mdl,
-    shift = res$delta_Th$mdl$coefficients[["(Intercept)"]]
+plotLs <- lapply(colnames(resG$delta_Th$designmat), plotMdlCustom,
+    mdl = resG$delta_Th$mdl,
+    shift = resG$delta_Th$mdl$coefficients[["(Intercept)"]]
 )
 
 plotLscp <- plotLs
@@ -96,9 +178,9 @@ pTotal <- p1/(wrap_plots(list(p4, p5), widths = c(2,1), ncol = 2)) + plot_annota
 pTotal
 ggsave(snakemake@output[["heatmap"]], plot = pTotal, width = 16, height = 16)
 
-### QC Figure
+### QC Figure (resG only)
 
-df <- lapply(res, function(x){
+df <- lapply(resG, function(x){
   if(!is.null(x$mdl))
   rsq <- ((summary(x$mdl)$r.sq))
   else rsq <- NULL
@@ -122,10 +204,10 @@ p6 <- ggplot(df, aes(x = cell1, y = cell2, fill = `R-sq`)) +
     theme(text = element_text(size = 19))
 p6
 
-df <- lapply(names(res), function(x){
-  if(!is.null(res[[x]]$curveFittingQC$residual_standard_errors)){
-    rse <- data.frame(rse = res[[x]]$curveFittingQC$residual_standard_errors)
-    rse$coefficient <- res[[x]]$curveFittingQC$coefficient
+df <- lapply(names(resG), function(x){
+  if(!is.null(resG[[x]]$curveFittingQC$residual_standard_errors)){
+    rse <- data.frame(rse = resG[[x]]$curveFittingQC$residual_standard_errors)
+    rse$coefficient <- resG[[x]]$curveFittingQC$coefficient
   }
   else{
      rse <- NULL
@@ -151,9 +233,9 @@ pTotal <- p6/p7 + plot_annotation(tag_levels = 'A', theme = theme(plot.title = e
   theme(plot.tag = element_text(size = 30))
 ggsave(snakemake@output[["qcPlot"]], plot = pTotal, width = 15, height = 15)
 
-## QC figure for delta-Th
+## QC figure for delta-Th (resG only)
 
-mdlDeltaTh <- res$delta_Th$mdl
+mdlDeltaTh <- resG$delta_Th$mdl
 
 pdf(snakemake@output[["qcPlotDeltaTh"]])
 par(mfrow = c(2, 1))
@@ -165,4 +247,3 @@ image(cor(resid(mdlDeltaTh)),
       zlim = c(-1, 1))
 mtext("B", side = 3, line = 1, las = 1, cex = 1.5, adj = 0)
 dev.off()
-

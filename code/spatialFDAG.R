@@ -19,7 +19,7 @@ unique(spe$condition)
 colData(spe)[["image_id"]] <- colData(spe)[["ID"]]
 
 #run the spatial statistics inference
-res <- spatialInference(
+resG <- spatialInference(
     spe, 
     selection = 0, 
     fun = "Gest", 
@@ -30,12 +30,60 @@ res <- spatialInference(
     family = gaussian(link = "log"),
     image_id = "image_id", 
     condition = "condition",
-    ncores = 1
+    ncores = 1,
+    intensityAdjustment = FALSE
 )
 
-mdl <- res$mdl
+mdlG <- resG$mdl
 
-out <- summary(mdl, re.test = FALSE)
-out$prob <- unique(colData(spe)$prob)
+outG <- summary(mdlG, re.test = FALSE)
+outG$prob <- unique(colData(spe)$prob)
 
-saveRDS(out, snakemake@output[["rds"]])
+### run with intensity adjustement ###
+resGAdj <- spatialInference(
+    spe, 
+    selection = 0, 
+    fun = "Gest", 
+    marks = "Labels",
+    rSeq = seq(0, 100, by = 1), 
+    correction = "rs",
+    sample_id = "sample_id",
+    family = gaussian(link = "log"),
+    image_id = "image_id", 
+    condition = "condition",
+    ncores = 1,
+    intensityAdjustment = TRUE
+)
+
+mdlGAdj <- resGAdj$mdl
+
+outGAdj <- summary(mdlGAdj, re.test = FALSE)
+outGAdj$prob <- unique(colData(spe)$prob)
+
+### run wo sandwich correction ###
+resGNSW <- spatialInference(
+    spe, 
+    selection = 0, 
+    fun = "Gest", 
+    marks = "Labels",
+    rSeq = seq(0, 100, by = 1), 
+    correction = "rs",
+    sample_id = "sample_id",
+    family = gaussian(link = "log"),
+    image_id = "image_id", 
+    condition = "condition",
+    ncores = 1,
+    sandwich = "none",
+    intensityAdjustment = FALSE
+
+)
+
+mdlGNSW <- resGNSW$mdl
+
+outGNSW <- summary(mdlGNSW, re.test = FALSE)
+outGNSW$prob <- unique(colData(spe)$prob)
+
+
+saveRDS(outG, snakemake@output[["rdsG"]])
+saveRDS(outGAdj, snakemake@output[["rdsGAdj"]])
+saveRDS(outGNSW, snakemake@output[["rdsGNSW"]])

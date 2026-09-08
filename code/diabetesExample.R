@@ -2,11 +2,6 @@ library("SpatialExperiment")
 library("dplyr")
 library("ggplot2"); theme_set(theme_light())
 library("patchwork")
-
-#re-install spatialFDA -> needs to be fixed later
-#BiocManager::install("spatialFDA")
-remotes::install_github("mjemons/spatialFDA@e70d8210bc46c36616c0ec596ac272631a9c0ec4")
-
 library("spatialFDA")
 # load the IMC dataset described in Damond et al. 2019 as SpatialExperiment object
 spe <- .loadExample(full = TRUE)
@@ -65,7 +60,7 @@ colData(spe)[["patient_stage"]] <- relevel(colData(spe)[["patient_stage"]],
 "Non-diabetic")
 
 #run the spatial statistics inference
-res <- crossSpatialInference(
+resG <- crossSpatialInference(
     spe, 
     selection = NULL,
     fun = "Gcross", 
@@ -80,6 +75,89 @@ res <- crossSpatialInference(
     ncores = 5
 )
 
-names(res)
+names(resG)
 
-saveRDS(res, snakemake@output[["rds"]])
+#run the spatial statistics inference
+resL <- crossSpatialInference(
+    spe, 
+    selection = NULL,
+    fun = "Lcross", 
+    marks = "cell_type",
+    rSeq = seq(0, 100, length.out = 50), 
+    correction = "iso",
+    sample_id = "patient_id",
+    family = gaussian(link = "log"),
+    algorithm = "bam",
+    image_id = "image_number", 
+    condition = "patient_stage",
+    ncores = 5
+)
+
+names(resL)
+
+out <- list("G" = resG, "L" = resL)
+
+## implement the competitor methods on the entire dataset ##
+
+### spicyR ###
+spicyRMM <- spicyR::spicy(
+  spe,
+  condition = "patient_stage",
+  imageID = "image_number",
+  subject = "patient_id",
+  cellType = "cell_type",
+  window = "square"
+)
+
+### smoppix ###
+library("smoppix")
+df <- colData(spe) |> as.data.frame() |> cbind(spatialCoords(spe))
+
+hypDf <- buildHyperFrame(df,
+  coordVars = c("x", "y"),
+  imageVars = c("patient_stage", "patient_id", "image_number"),
+  featureName = "cell_type"
+)
+
+cellTypes <- unique(df$cell_type)
+combos <- combn(cellTypes, 2, simplify = FALSE)
+
+# nnPair estimates co/antilocalization; by default all pairwise
+# combinations of features are fitted in one call
+nnObj <- estPis(hypDf,
+  pis = c("nnPair"), null = "background", verbose = FALSE,
+  features = cellTypes
+)
+
+nnObj <- addWeightFunction(nnObj, lowestLevelVar = "image",
+  pi = "nnPair")
+
+resList <- lapply(combos, function(pair) {
+  
+  combo <- paste(pair, collapse = "--")
+
+  dfBiNN <- buildDataFrame(nnObj, gene = combo, pi = "nnPair")
+
+  lmeMod <- lmerTest::lmer(pi - 0.5 ~ patient_stage + (1 | patient_id),
+    data = dfBiNN, na.action = na.omit,
+    weights = weight, contrasts = list("patient_stage" = "contr.treatment")
+  )
+
+  out <- lmerTest:::get_coefmat(lmeMod) |>
+    as.data.frame()
+  out$coefficient <- rownames(out)
+  out$pair <- combo
+
+  return(out)
+})
+
+resSmoppix <- dplyr::bind_rows(resList)
+
+outComparison <- list("G" = resG, 
+                      "L" = resL,
+                      "spicyRMM" = spicyRMM,
+                      "smoppix" = resSmoppix
+                    )
+
+saveRDS(outComparison, snakemake@output[["rds"]])
+

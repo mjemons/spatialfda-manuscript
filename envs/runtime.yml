@@ -1,10 +1,11 @@
 channels:
    - conda-forge
+   - https://prefix.dev/almost-conductor
    - bioconda
 dependencies:
    - r-base=4.5.2
-   - r-dplyr=1.1.4
-   - r-ggplot2=4.0.2
+   - conda-forge::r-dplyr
+   - conda-forge::r-ggplot2
    - bioconda::bioconductor-spatialexperiment=1.20.0
    - conda-forge::r-devtools=2.4.5
    - conda-forge::r-lme4=1.1_38
@@ -15,3 +16,13 @@ dependencies:
    - conda-forge::r-spatstat=3.5_0
    - conda-forge::r-gridextra
    - conda-forge::r-fda=6.3.0
+   - conda-forge::r-patchwork
+   - conda-forge::r-rcppparallel
+   - conda-forge::r-simdesign
+   - bioconda::bioconductor-smoppix=1.2.1-0
+   - r-mxfda=0.2.2.1
+   - r-fda.usc
+   - r-spaceanova=0.1.0
+   - conda-forge::r-extradistr=1.10.0.2
+   - conda-forge::r-microbenchmark
+   - bioconductor-spatialfda=1.5.2

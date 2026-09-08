@@ -1,3 +1,5 @@
+### coded with the help of chatGPT ###
+
 library("ggplot2")
 library("dplyr")
 library("tidyr")
@@ -6,11 +8,15 @@ library("patchwork")
 set.seed(1234)
 
 lys <- lapply(snakemake@input[["ls"]], readRDS)
-lys_sTable <- lapply(lys, function(elem){
-			       df <- as.data.frame(elem) %>% select(c("method", "comp", "p.value", "std", "prop")) 
-			         return(df)})
+lys_sTable <- lapply(lys, function(elem) {
+    as.data.frame(elem) %>%
+        select(method, comp, p.value, std, prop) %>%
+        mutate(repetition = row_number())
+})
 
 df <- dplyr::bind_rows(lys_sTable)
+
+nSim <- 500
 
 dfTotal <- df %>% filter(comp %in% c("pert1", "pert3"))
 dfTotal <- dfTotal %>%
@@ -20,22 +26,33 @@ dfTotal <- dfTotal %>%
     method == "spaceANOVAUni" ~ "SpaceANOVA.Uni",
     method == "spaceANOVAMulti" ~ "SpaceANOVA.Multi",
     method == "spatialFDAL" ~ "spatialFDA.L",
+		method == "spatialFDALAdj" ~ "spatialFDA.L.Adj",
+		method == "spatialFDALNSW" ~ "spatialFDA.L.NSW",
     method == "spatialFDAG" ~ "spatialFDA.G",
+		method == "spatialFDAGAdj" ~ "spatialFDA.G.Adj",
+		method == "spatialFDAGNSW" ~ "spatialFDA.G.NSW",
     method == "smoppix" ~ "smoppix",
 		method == "intensityMM" ~ "intensity.MM",
 		method == "mxfdaFM" ~ "mxfda",
 		method == "mxfdaMM" ~ "mxfda.MM"
-  )) 
+  	),
+    p_0 = prop,
+    ID = paste(comp, p_0, std, repetition, sep = "_")
+	) 
 
 dfTotal$p_0 <- dfTotal$prop
-nSim = 500
 
-iCobraPlot <- function(dfTotal, overall){
+iCobraPlot <- function(dfTotal, overall, colors, levelsMethods){
 	#df <- dfTotal %>% filter(std == stdVal)
 	df <- dfTotal
-	df <- df %>% group_by(method, comp, std, p_0) %>% mutate(repetition = rep(1:nSim, length.out = n()))
-
-	df$ID <- paste0(df$comp, df$p_0, df$std, df$repetition)
+	
+	df$ID <- paste(
+        df$comp,
+        df$p_0,
+        df$std,
+        df$repetition,
+        sep = "_"
+  )
 
 	df_wide <- df %>% pivot_wider(names_from = "method", values_from = "p.value") %>%
   	mutate(truth = comp == "pert3") %>% as.data.frame()
@@ -55,10 +72,6 @@ iCobraPlot <- function(dfTotal, overall){
 	}else{
 		cobraperf <- calculate_performance(cobraData, binary_truth = "truth", splv = "p_0")
 	}
-
-	colors <- c(intensity.MM = "#A6CEE3", smoppix = "#1F78B4", SpaceANOVA.Uni = "#33A02C", SpaceANOVA.Multi = "#B2DF8A",
-	 spatialFDA.L = "#E31A1C", spatialFDA.G = "#FB9A99", spicyR.LM ="#FDBF6F", spicyR.MM = "#FF7F00", mxfda = "#CAB2D6",
-	mxfda.MM = "#6A3D9A")
   
   update_geom_defaults("line", list(key_glyph = draw_key_point))
 	
@@ -67,8 +80,7 @@ iCobraPlot <- function(dfTotal, overall){
                                   facetted = TRUE,
 																	incloverall = overall)
 	
-	cobraplot <- reorder_levels(cobraplot, c("intensity.MM", "smoppix", "spicyR.LM", "spicyR.MM", "SpaceANOVA.Multi",
-"SpaceANOVA.Uni", "spatialFDA.G", "spatialFDA.L", "mxfda", "mxfda.MM"))
+	cobraplot <- reorder_levels(cobraplot, levelsMethods)
 
 	return(cobraplot)
 }
@@ -156,8 +168,29 @@ plotFDPROCCurves <- function(dataSplit){
 	return(c(pFDP, pROC))
 }
 
+### main figure with best spatialFDA and all competitors ###
 
-dataSplit <- iCobraPlot(dfTotal = dfTotal, overall = FALSE)
+df1 <- dfTotal %>%
+  dplyr::filter(!method %in% c( 
+"spatialFDA.L.Adj", 
+"spatialFDA.L.NSW",
+"spatialFDA.G",
+"spatialFDA.G.NSW")) %>%
+	mutate(
+    method = if_else(
+      method == "spatialFDA.G.Adj",
+      "spatialFDA.G",
+      method
+    )
+  )
+
+dataSplit <- iCobraPlot(dfTotal = df1, 
+	overall = FALSE,
+levelsMethods = c("intensity.MM", "smoppix", "spicyR.LM", "spicyR.MM", "SpaceANOVA.Multi",
+"SpaceANOVA.Uni", "spatialFDA.G", "spatialFDA.G.Adj", "spatialFDA.L", "mxfda", "mxfda.MM"),
+colors = c(intensity.MM = "#A6CEE3", smoppix = "#1F78B4", SpaceANOVA.Uni = "#33A02C", SpaceANOVA.Multi = "#B2DF8A",
+	 spatialFDA.L = "#E31A1C", spatialFDA.G = "#FB9A99", spicyR.LM ="#FDBF6F", spicyR.MM = "#FF7F00", mxfda = "#CAB2D6",
+	mxfda.MM = "#6A3D9A"))
 
 pLs <- plotFDPROCCurves(dataSplit)
 
@@ -165,7 +198,12 @@ pFDP <- pLs[1]
 pROC <- pLs[2]
 
 
-dataOverall <- iCobraPlot(dfTotal = dfTotal, overall = TRUE)
+dataOverall <- iCobraPlot(dfTotal = df1, overall = TRUE,
+	levelsMethods = c("intensity.MM", "smoppix", "spicyR.LM", "spicyR.MM", "SpaceANOVA.Multi",
+"SpaceANOVA.Uni", "spatialFDA.G", "spatialFDA.G.Adj", "spatialFDA.L", "mxfda", "mxfda.MM"),
+colors = c(intensity.MM = "#A6CEE3", smoppix = "#1F78B4", SpaceANOVA.Uni = "#33A02C", SpaceANOVA.Multi = "#B2DF8A",
+	 spatialFDA.L = "#E31A1C", spatialFDA.G = "#FB9A99", spicyR.LM ="#FDBF6F", spicyR.MM = "#FF7F00", mxfda = "#CAB2D6",
+	mxfda.MM = "#6A3D9A"))
 pLs <- plotFDPROCCurves(dataOverall)
 
 pFDPOverall <- pLs[1]
@@ -178,3 +216,60 @@ pROC <- (pROCOverall[[1]]/pROC[[1]]) + plot_layout(guides = "collect") + plot_an
 
 ggsave(snakemake@output[["plt"]], plot = pFDP, width = 9, height = 9)
 ggsave(snakemake@output[["roc"]], plot = pROC, width = 9, height = 9)
+
+
+### supplementary figure with all spatialFDA variants ###
+
+# Use colour for L vs G only
+colors <- c(
+  "spatialFDA.L"     = "#D73027",  # red
+  "spatialFDA.L.Adj" = "#FC8D59",  # orange
+  "spatialFDA.L.NSW" = "#7F0000",  # dark red
+
+  "spatialFDA.G"     = "#4575B4",  # blue
+  "spatialFDA.G.Adj" = "#91BFDB",  # light blue
+  "spatialFDA.G.NSW" = "#313695"   # dark blue
+)
+
+df2 <- dfTotal %>%
+dplyr::filter(method %in% c("spatialFDA.L",
+"spatialFDA.L.Adj",
+"spatialFDA.L.NSW",
+"spatialFDA.G",
+"spatialFDA.G.Adj",
+"spatialFDA.G.NSW"))
+
+dataSplit <- iCobraPlot(dfTotal = df2, overall = FALSE, colors = colors,
+levels = c("spatialFDA.L",
+"spatialFDA.L.Adj",
+"spatialFDA.L.NSW",
+"spatialFDA.G",
+"spatialFDA.G.Adj",
+"spatialFDA.G.NSW"))
+
+pLs <- plotFDPROCCurves(dataSplit)
+
+pFDP <- pLs[1]
+pROC <- pLs[2]
+
+dataOverall <- iCobraPlot(dfTotal = df2, overall = TRUE, colors = colors,
+levels = c("spatialFDA.L",
+"spatialFDA.L.Adj",
+"spatialFDA.L.NSW",
+"spatialFDA.G",
+"spatialFDA.G.Adj",
+"spatialFDA.G.NSW"))
+pLs <- plotFDPROCCurves(dataOverall)
+
+pFDPOverall <- pLs[1]
+pROCOverall <- pLs[2]
+
+pFDP <- (pFDPOverall[[1]]/pFDP[[1]]) + plot_layout(guides = "collect") + plot_annotation(tag_levels = 'A', theme = theme(plot.title = element_text(size = 20))) &
+theme(plot.tag = element_text(size = 20), legend.position = 'bottom')  &
+  guides(colour = guide_legend(ncol = 2, byrow = FALSE))
+pROC <- (pROCOverall[[1]]/pROC[[1]]) + plot_layout(guides = "collect") + plot_annotation(tag_levels = 'A', theme = theme(plot.title = element_text(size = 20))) &
+theme(plot.tag = element_text(size = 20), legend.position = 'bottom') &
+  guides(colour = guide_legend(ncol = 2, byrow = FALSE))
+
+ggsave(snakemake@output[["pltSupp"]], plot = pFDP, width = 9, height = 9)
+ggsave(snakemake@output[["rocSupp"]], plot = pROC, width = 9, height = 9)
