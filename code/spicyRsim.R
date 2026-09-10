@@ -1,12 +1,17 @@
-# Code adapted from Canete et al. (2022)
+# optimised for future instead of parallel::mclapply with ChatGPT
 
 ## Load packages
 library(spicyR)
 library(spatstat)
-library(tidyverse)
+library(tidyr)
+library(dplyr)
 library(plotROC)
 library(SpatialExperiment)
 library(spatialFDA)
+library(smoppix)
+library(mxfda)
+library(SpaceANOVA)
+library(HDF5Array)
 
 ## INITIALISE
 
@@ -19,7 +24,7 @@ window <- owin(xrange = c(0, 1000),
 nPatients <- 40 
 nIm <- 3
 nSim <- 200
-nCores <- 1
+nCores <- 10
 nsimBoot <- 100
 counts <- seq(from = 20, to = 400, by = 10)
 Rs <- c(10, 30, 50, 70, 90, 100) #seq(from = 10, to = 100, by = 10)
@@ -92,12 +97,13 @@ ConditionIntensities <- function(df, marks, conditionType, cellType, imageId, sa
 
 resultsTW = NULL
 
+future::plan(future::multisession, workers = nCores)
+
 for(lam in Rs){
   
   lambda = lam  
   
   ## SIGNAL
-  
   sim  <- function(i, counts, nPatients, nIm, window, lambda){
     
     set.seed(i)
@@ -154,6 +160,7 @@ for(lam in Rs){
     colData(spe)[["condition"]] <- relevel(colData(spe)[["condition"]],
     "Group1")
     
+    #### spicyR ####
     test.spicyLM <- spicyR::spicy(spe,
                   condition = "condition",
                   from = "B",
@@ -175,6 +182,7 @@ for(lam in Rs){
 		  weights = FALSE,
                   verbose = FALSE)
 
+    #### spatialFDA ####
     res <- spatialFDA::spatialInference(
                         spe, 
                         selection = c("B", "A"), 
@@ -210,6 +218,8 @@ for(lam in Rs){
 
     dfL <- as.data.frame(test.spatialFDAL$s.table)[paste0('condition', "Group2", '(x)'),]
     dfL <- dplyr::rename(dfL, p.value = `p-value`)
+
+    #### intensity MM ####
     
     dfSpe <- .speToDf(spe)
     intensitiesControl <- ConditionIntensities(df = dfSpe,
@@ -260,16 +270,131 @@ for(lam in Rs){
     total <- total |> slice_min(.data[["Pr(>|t|)"]], n = 1, with_ties = FALSE)
     rownames(total) <- NULL
 
+    #### smoppix ####
+    df <- colData(spe) |> as.data.frame() |> cbind(spatialCoords(spe))
+
+    hypDf <- buildHyperFrame(df,
+                              coordVars = c("x", "y"),
+                              imageVars = c("condition", "subject", "imageID"),
+                            featureName = "cellType"
+    )
+
+    nnObj <- estPis(hypDf,
+                    pis = c("nnPair"), null = "background", verbose = FALSE,
+                    features = c("B", "A")
+    )
+
+    nnObj <- addWeightFunction(nnObj, lowestLevelVar = "imageID",
+                                  pi = "nnPair")
+
+    dfUniNN <- buildDataFrame(nnObj, gene = "B--A", pi = "nnPair")
+
+    lmeMod <- lmerTest::lmer(pi - 0.5 ~ condition + (1 | subject),
+                            data = dfUniNN, na.action = na.omit,
+                            weights = weight, contrasts = list("condition" = "contr.treatment")
+    )
+
+    smoppix <- lmerTest:::get_coefmat(lmeMod) |>
+        as.data.frame()
+
+    #### spaceANOVVA ####
+    library("fda.usc")
+    library("gridExtra")
+    df <- colData(spe)
+    df$Group <- as.factor(df$condition)
+    df$cellType <- as.factor(df$cellType)
+    df$imageID <- as.factor(df$imageID)
+    df$ID <- as.factor(df$subject)
+    df$x <- spatialCoords(spe)[,1]
+    df$y <- spatialCoords(spe)[,2]
+
+    data <- df %>% as.data.frame() %>% dplyr::select(Group, cellType, imageID, ID, x, y)
+
+    #coded according to the github repository of spaceANOVA
+
+    Final_result = SpaceANOVA::All_in_one(data = data, fixed_r = seq(0, 100, by = 1), Summary_function = "g",  Hard_ths = 10, homogeneous = TRUE, interaction_adjustment = TRUE, perm = TRUE, nPerm = 20, cores = 2)
+
+    out <- SpaceANOVA::p_extract(Final_result)
+    spaceANOVAUni <- out[[1]]
+    spaceANOVAMulti <- out [[2]]
+    
+    #### mxfda ####
+
+    meta <- as_tibble(colData(spe)) |>
+      dplyr::select(subject, imageID, condition, sample_id) |>
+      unique()
+    meta$subject <- as.factor(meta$subject)
+    # response needs to be 0<=y<=1 for logistic regression
+    meta$condition_binary <- ifelse(meta$condition == "Group1", 0, 1)
+
+    spatial <- as_tibble(spatialCoords(spe))
+    # assumes same ordering of rows between spatialCoords(spe) and colData(spe)
+    spatial$cellType <- as.character(as_tibble(colData(spe))$cellType)
+    spatial$imageID  <- factor(as_tibble(colData(spe))$imageID)
+
+    mxFDAobject <- make_mxfda(metadata   = meta,
+                              spatial   = spatial,
+                              subject_key = "subject",
+                              sample_key  = "imageID")
+
+    mxFDAobject <- extract_summary_functions(mxFDAobject,
+                                              extract_func   = bivariate,
+                                              summary_func   = Kcross,
+                                              r_vec          = seq(0, 100, by = 10),
+                                              edge_correction = "iso",
+                                              markvar        = "cellType",
+                                              mark1          = "B",
+                                              mark2          = "A") 
+
+    mxFDAobject <- run_sofr(mxFDAobject,
+                            model_name = "fit_sofr_condition",
+                            formula    = condition_binary ~ 1,
+                            family     = "binomial",
+                            metric     = "bi k", r = "r", value = "fundiff",
+                            optimizer  = "efs")
+
+    mdl <- extract_model(mxFDAobject, 'bi k', type = 'sofr', model_name = 'fit_sofr_condition')
+
+    mxfda_outFM <- summary(mdl, re.test = FALSE)
+
+    mxFDAobject <- run_sofr(mxFDAobject,
+                            model_name = "fit_sofr_condition",
+                            formula    = condition_binary ~ 1 + s(subject, bs = "re"),
+                            family     = "binomial",
+                            metric     = "bi k", r = "r", value = "fundiff",
+                            optimizer  = "efs")
+
+    mdl <- extract_model(mxFDAobject, 'bi k', type = 'sofr', model_name = 'fit_sofr_condition')
+
+    mxfda_outMM <- summary(mdl, re.test = FALSE)
+
     res = c(spicyRLM = test.spicyLM$p.value[1,"conditionGroup2"],
-	    spicyRMM = test.spicyMM$p.value[1,"conditionGroup2"], 
+	          spicyRMM = test.spicyMM$p.value[1,"conditionGroup2"], 
             spatialFDAL = dfL$p.value,
             spatialFDAG = dfG$p.value,
-            intensityMM = data.frame(p.value = total["Pr(>|t|)"]))
+            intensityMM = total[["Pr(>|t|)"]],
+            smoppix = smoppix[[paste0('conditionGroup2'), "Pr(>|t|)"]],
+            spaceANOVAUni = spaceANOVAUni[["B","A"]],
+            spaceANOVAMulti = spaceANOVAMulti[["B","A"]],
+            mxfdaFM = as.data.frame(mxfda_outFM$s.table)["s(xmat.tmat):L.xmat","p-value"],
+            mxfdaMM = as.data.frame(mxfda_outMM$s.table)["s(xmat.tmat):L.xmat","p-value"]
+            )
     return(res)
   }
   
   
-  res <- parallel::mclapply(as.list(seq_len(nSim)+seed),sim, counts = counts, nPatients = nPatients, nIm = nIm, window = window, lambda = lambda, mc.cores = nCores)
+  res <- future.apply::future_lapply(as.list(seq_len(nSim)+seed), sim, counts = counts, nPatients = nPatients, nIm = nIm, window = window, lambda = lambda, future.packages = c(
+    "tidyr",
+    "dplyr",
+    "spicyR",
+    "spatstat",
+    "SpatialExperiment",
+    "spatialFDA",
+    "smoppix",
+    "mxfda",
+    "SpaceANOVA",
+    "lmerTest"
+  ))
   
   res <- do.call('rbind', res)
   
@@ -391,7 +516,7 @@ sim  <- function(i, counts, nPatients, nIm, window){
                     )
     test.spatialFDAL <- summary(res$mdl)
 
-    dfL <- as.data.frame(test.spatialFDAL$s.table)[paste0('condition', "Group2", '(yindex)'),]
+    dfL <- as.data.frame(test.spatialFDAL$s.table)[paste0('condition', "Group2", '(x)'),]
     dfL <- dplyr::rename(dfL, p.value = `p-value`)
   
     dfSpe <- .speToDf(spe)
@@ -443,16 +568,128 @@ sim  <- function(i, counts, nPatients, nIm, window){
     total <- total |> slice_min(.data[["Pr(>|t|)"]], n = 1, with_ties = FALSE)
     rownames(total) <- NULL
 
+    #### smoppix ####
+    df <- colData(spe) |> as.data.frame() |> cbind(spatialCoords(spe))
+
+    hypDf <- buildHyperFrame(df,
+                              coordVars = c("x", "y"),
+                              imageVars = c("condition", "subject", "imageID"),
+                            featureName = "cellType"
+    )
+
+    nnObj <- estPis(hypDf,
+                    pis = c("nnPair"), null = "background", verbose = FALSE
+    )
+
+    nnObj <- addWeightFunction(nnObj, lowestLevelVar = "imageID",
+                                  pi = "nnPair")
+
+    dfUniNN <- buildDataFrame(nnObj, gene = "B--A", pi = "nnPair")
+
+    lmeMod <- lmerTest::lmer(pi - 0.5 ~ condition + (1 | subject),
+                            data = dfUniNN, na.action = na.omit,
+                            weights = weight, contrasts = list("condition" = "contr.sum")
+    )
+
+    smoppix <- lmerTest:::get_coefmat(lmeMod) |>
+        as.data.frame()
+
+    #### spaceANOVVA ####
+    df <- colData(spe)
+    df$Group <- as.factor(df$condition)
+    df$cellType <- as.factor(df$cellType)
+    df$imageID <- as.factor(df$imageID)
+    df$ID <- as.factor(df$subject)
+    df$x <- spatialCoords(spe)[,1]
+    df$y <- spatialCoords(spe)[,2]
+
+    data <- df %>% as.data.frame() %>% dplyr::select(Group, cellType, imageID, ID, x, y)
+
+    #coded according to the github repository of spaceANOVA
+
+    Final_result = SpaceANOVA::All_in_one(data = data, fixed_r = seq(0, 100, by = 1), Summary_function = "g",  Hard_ths = 10, homogeneous = TRUE, interaction_adjustment = TRUE, perm = TRUE, nPerm = 20, cores = 2)
+
+    out <- SpaceANOVA::p_extract(Final_result)
+    spaceANOVAUni <- out[[1]]
+    spaceANOVAMulti <- out [[2]]
+    
+    #### mxfda ####
+
+    meta <- as_tibble(colData(spe)) |>
+      dplyr::select(subject, imageID, condition, sample_id) |>
+      unique()
+    meta$subject <- as.factor(meta$subject)
+    # response needs to be 0<=y<=1 for logistic regression
+    meta$condition_binary <- ifelse(meta$condition == "Group1", 0, 1)
+
+    spatial <- as_tibble(spatialCoords(spe))
+    # assumes same ordering of rows between spatialCoords(spe) and colData(spe)
+    spatial$cellType <- as.character(as_tibble(colData(spe))$cellType)
+    spatial$imageID  <- factor(as_tibble(colData(spe))$imageID)
+
+    mxFDAobject <- make_mxfda(metadata   = meta,
+                              spatial   = spatial,
+                              subject_key = "subject",
+                              sample_key  = "imageID")
+
+    mxFDAobject <- extract_summary_functions(mxFDAobject,
+                                              extract_func   = bivariate,
+                                              summary_func   = Kcross,
+                                              r_vec          = seq(0, 100, by = 10),
+                                              edge_correction = "iso",
+                                              markvar        = "cellType",
+                                              mark1          = "B",
+                                              mark2          = "A") 
+
+    mxFDAobject <- run_sofr(mxFDAobject,
+                            model_name = "fit_sofr_condition",
+                            formula    = condition_binary ~ 1,
+                            family     = "binomial",
+                            metric     = "bi k", r = "r", value = "fundiff",
+                            optimizer  = "efs")
+
+    mdl <- extract_model(mxFDAobject, 'bi k', type = 'sofr', model_name = 'fit_sofr_condition')
+
+    mxfda_outFM <- summary(mdl, re.test = FALSE)
+
+    mxFDAobject <- run_sofr(mxFDAobject,
+                            model_name = "fit_sofr_condition",
+                            formula    = condition_binary ~ 1 + s(subject, bs = "re"),
+                            family     = "binomial",
+                            metric     = "bi k", r = "r", value = "fundiff",
+                            optimizer  = "efs")
+
+    mdl <- extract_model(mxFDAobject, 'bi k', type = 'sofr', model_name = 'fit_sofr_condition')
+
+    mxfda_outMM <- summary(mdl, re.test = FALSE)
+
     res = c(spicyRLM = test.spicyLM$p.value[1,"conditionGroup2"],
-	    spicyRMM = test.spicyMM$p.value[1,"conditionGroup2"], 
+	          spicyRMM = test.spicyMM$p.value[1,"conditionGroup2"], 
             spatialFDAL = dfL$p.value,
             spatialFDAG = dfG$p.value,
-            intensityMM = data.frame(p.value = total["Pr(>|t|)"])) 
+            intensityMM = total[["Pr(>|t|)"]],
+            smoppix = smoppix[[paste0('condition1'), "Pr(>|t|)"]],
+            spaceANOVAUni = spaceANOVAUni[["B","A"]],
+            spaceANOVAMulti = spaceANOVAMulti[["B","A"]],
+            mxfdaFM = as.data.frame(mxfda_outFM$s.table)["s(xmat.tmat):L.xmat","p-value"],
+            mxfdaMM = as.data.frame(mxfda_outMM$s.table)["s(xmat.tmat):L.xmat","p-value"]
+            )
   return(res)
   
 }
 
-results <- parallel::mclapply(as.list(seq_len(nSim)+seed),sim, counts = counts, nPatients = nPatients, nIm = nIm, window = window, mc.cores = nCores)
+results <- future.apply::future_lapply(as.list(seq_len(nSim)+seed), sim, counts = counts, nPatients = nPatients, nIm = nIm, window = window, future.packages = c(
+    "tidyr",
+    "dplyr",
+    "spicyR",
+    "spatstat",
+    "SpatialExperiment",
+    "spatialFDA",
+    "smoppix",
+    "mxfda",
+    "SpaceANOVA",
+    "lmerTest"
+  ))
 
 results <- do.call('rbind', results)
 

@@ -16,8 +16,8 @@ colData(spe)[["condition"]] <- relevel(colData(spe)[["condition"]],
 #rename image ID
 colData(spe)[["image_id"]] <- colData(spe)[["ID"]]
 
-#run the spatial statistics inference
-res <- spatialInference(
+### run the spatial statistics inference with defaults ###
+resL <- spatialInference(
     spe, 
     selection = 0, 
     fun = "Lest", 
@@ -28,12 +28,59 @@ res <- spatialInference(
     family = gaussian(link = "log"),
     image_id = "image_id", 
     condition = "condition",
-    ncores = 1
+    ncores = 1,
+    intensityAdjustment = FALSE
 )
 
-mdl <- res$mdl
+mdlL <- resL$mdl
 
-out <- summary(mdl, re.test = FALSE)
-out$prob <- unique(colData(spe)$prob)
+outL <- summary(mdlL, re.test = FALSE)
+outL$prob <- unique(colData(spe)$prob)
 
-saveRDS(out, snakemake@output[["rds"]])
+### run with intensity adjustement ###
+resLAdj <- spatialInference(
+    spe, 
+    selection = 0, 
+    fun = "Lest", 
+    marks = "Labels",
+    rSeq = seq(0, 100, by = 1), 
+    correction = "iso",
+    sample_id = "sample_id",
+    family = gaussian(link = "log"),
+    image_id = "image_id", 
+    condition = "condition",
+    ncores = 1,
+    intensityAdjustment = TRUE
+)
+
+mdlLAdj <- resLAdj$mdl
+
+outLAdj <- summary(mdlLAdj, re.test = FALSE)
+outLAdj$prob <- unique(colData(spe)$prob)
+
+
+### run wo sandwich correction ###
+resLNSW <- spatialInference(
+    spe, 
+    selection = 0, 
+    fun = "Lest", 
+    marks = "Labels",
+    rSeq = seq(0, 100, by = 1), 
+    correction = "iso",
+    sample_id = "sample_id",
+    family = gaussian(link = "log"),
+    image_id = "image_id", 
+    condition = "condition",
+    ncores = 1,
+    sandwich = "none",
+    intensityAdjustment = FALSE
+)
+
+mdlLNSW <- resLNSW$mdl
+
+outLNSW <- summary(mdlLNSW, re.test = FALSE)
+outLNSW$prob <- unique(colData(spe)$prob)
+
+saveRDS(outL, snakemake@output[["rdsL"]])
+saveRDS(outLAdj, snakemake@output[["rdsLAdj"]])
+saveRDS(outLNSW, snakemake@output[["rdsLNSW"]])

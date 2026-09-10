@@ -9,11 +9,11 @@ lys <- lapply(snakemake@input[["ls"]], readRDS)
 
 lys_sTable <- lapply(lys, function(elem){
   	
-	if(method == "spatialFDAL"){
+	if(method == "spatialFDAL" || method == "spatialFDALAdj" || method == "spatialFDALNSW"){
 		df <- as.data.frame(elem$s.table)[paste0('condition', comp, '(x)'),]
 		df <- dplyr::rename(df, p.value = `p-value`)
 	}
-	if(method == "spatialFDAG"){
+	if(method == "spatialFDAG" || method == "spatialFDAGAdj" || method == "spatialFDAGNSW"){
 		df <- as.data.frame(elem$s.table)[paste0('condition', comp, '(x)'),]
 		df <- dplyr::rename(df, p.value = `p-value`)
 	}	
@@ -24,7 +24,7 @@ lys_sTable <- lapply(lys, function(elem){
 		df <- data.frame(p.value = elem[["0","0"]])
 	}
 	if(method == "smoppix"){
-		df <- data.frame(p.value = elem[[paste0('condition1'), "Pr(>|t|)"]])
+		df <- data.frame(p.value = elem[[paste0('condition', comp), "Pr(>|t|)"]])
 	}	
 	if(method == "intensityMM"){
 		df <- data.frame(p.value = elem[[paste0('condition', comp), "Pr(>|t|)"]])

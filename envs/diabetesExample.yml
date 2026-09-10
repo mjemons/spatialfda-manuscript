@@ -1,18 +1,24 @@
 channels:
    - conda-forge
+   - https://prefix.dev/almost-conductor
    - bioconda
+
 dependencies:
-   - r-base=4.4.3
-   - r-dplyr=1.1.4
-   - r-ggplot2=3.5.1
-   - bioconda::bioconductor-spatialexperiment=1.16.0
+   - r-base=4.5
+   - r-dplyr
+   - bioconda::bioconductor-spatialexperiment=1.20.0
    - conda-forge::r-devtools=2.4.5
-   - conda-forge::r-lme4=1.1_35
+   - conda-forge::r-lme4=1.1_37
    - conda-forge::r-spatstat.geom=3.6_1
-   - bioconda::bioconductor-spicyr=1.18.0
-   - conda-forge::r-tidyverse=2.0.0
-   - conda-forge::r-plotroc=2.3.3
+   - bioconda::bioconductor-spicyr=1.22.0
+   - conda-forge::r-tidyverse
+   - conda-forge::r-plotroc
    - conda-forge::r-spatstat=3.5_0
-   - bioconda::bioconductor-imcdatasets=1.14.0
-   - conda-forge::r-ggplot2=3.5.1
-   - conda-forge::r-patchwork=1.3.1
+   - bioconda::bioconductor-imcdatasets=1.18.0-0
+   - conda-forge::r-ggplot2
+   - conda-forge::r-patchwork
+   - conda-forge::r-rcppparallel
+   - conda-forge::r-furrr
+   - bioconda::bioconductor-smoppix=1.2.1-0
+   - conda-forge::r-extradistr
+   - bioconductor-spatialfda=1.5.2

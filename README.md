@@ -33,6 +33,12 @@ If you want to use only the `conda` environment without `apptainer` you might ne
 
 It can happen that you run into an `apptainer` error when setting up the environment. In this case please specify a new `tmp` directory via `--apptainer-args`
 
+### AI usage
+
+Parts of this code were generated with the assistance of claude Sonnet 5 and lower
+as well as ChatGPT 5.6 and lower. We take full responsibility for all code
+in this repository. 
+
 ### Citation
 
 ```

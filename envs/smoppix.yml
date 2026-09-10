@@ -2,8 +2,9 @@ channels:
    - conda-forge
    - bioconda
 dependencies:
-   - r-base=4.4.3
-   - r-dplyr=1.1.4
-   - bioconda::bioconductor-spatialexperiment=1.16.0
-   - conda-forge::r-devtools=2.4.5
-   - conda-forge::r-lme4=1.1_37
+   - r-base=4.5
+   - r-dplyr
+   - bioconda::bioconductor-spatialexperiment=1.20.0
+   - conda-forge::r-lme4=1.1_38
+   - bioconda::bioconductor-smoppix=1.2.1-0
+   - conda-forge::r-extradistr=1.10.0.2

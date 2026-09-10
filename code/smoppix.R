@@ -30,7 +30,7 @@ dfUniNN <- buildDataFrame(nnObj, gene = "0", pi = "nn")
 
 lmeMod <- lmerTest::lmer(pi - 0.5 ~ condition + (1 | sample_id),
                          data = dfUniNN, na.action = na.omit,
-                         weights = weight, contrasts = list("condition" = "contr.sum")
+                         weights = weight, contrasts = list("condition" = "contr.treatment")
 )
 
 out <- lmerTest:::get_coefmat(lmeMod) |>

@@ -6,6 +6,7 @@ library("fda.usc")
 library("ggplot2")
 library("cowplot")
 library("gridExtra")
+library("SpatialExperiment")
 
 set.seed(123)
 
