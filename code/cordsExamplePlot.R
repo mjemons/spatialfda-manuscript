@@ -13,10 +13,26 @@ resGFM <- res$GFM
 
 ## adapted from the `spatialFDA` vignette
 pG <- plotCrossHeatmap(resG, QCThreshold = 0, QCMetric = "medianMinIntensity") +
-  theme(legend.position = "bottom") + guides(shape = "none") 
+  theme(legend.position = "bottom") + guides(shape = "none") +
+    theme(legend.position = "bottom") + theme(
+      axis.title   = element_text(size = 18),
+      axis.text    = element_text(size = 14),
+      strip.text   = element_text(size = 16),
+      legend.title = element_text(size = 16),
+      legend.text  = element_text(size = 14),
+      plot.title   = element_text(size = 20)
+    )
 
 pGFM <- plotCrossHeatmap(resGFM, QCThreshold = 0, QCMetric = "medianMinIntensity") +
-  theme(legend.position = "bottom") + guides(shape = "none") 
+  theme(legend.position = "bottom") + guides(shape = "none") +
+    theme(legend.position = "bottom") + theme(
+      axis.title   = element_text(size = 18),
+      axis.text    = element_text(size = 14),
+      strip.text   = element_text(size = 16),
+      legend.title = element_text(size = 16),
+      legend.text  = element_text(size = 14),
+      plot.title   = element_text(size = 20)
+    )
 
 
 ##### let's look more closely at tumour-fibroblasts (CAF?) ####
@@ -86,7 +102,7 @@ plotLs <- lapply(colnames(designmat), plotMdl,
 pVF <- wrap_plots(plotLs) +
   plot_annotation(title = "fGAMM Vessel -> Fibroblast", 
   theme = theme(plot.title = element_text(size = 15))) & 
-  theme(plot.tag = element_text(size = 30))
+  theme(plot.tag = element_text(size = 35))
 
 
 ### plot some stage spatial plots ###
@@ -113,18 +129,27 @@ p <- ggplot(dfSub, aes(x = Center_X, y = Center_Y, color = cell_category)) +
 "41_87_218_II" = "II",
 "41_86_106_III" = "III",
 "42_87_286_IV" = "IV")), ncol = 4) +
-    theme(legend.title.size = 20, legend.text.size = 20) +
     xlab("x") +
     ylab("y") +
     labs(color = "cell category")+
     coord_equal() +
     theme_light() +
-    theme(legend.position = "right")
+    theme(legend.position = "bottom") + theme(
+      axis.title   = element_text(size = 18),
+      axis.text    = element_text(size = 14),
+      strip.text   = element_text(size = 16),
+      legend.title = element_text(size = 16),
+      legend.text  = element_text(size = 14),
+      plot.title   = element_text(size = 20)
+    ) + guides(colour = guide_legend(
+        title = "Cell categories",
+        override.aes = list(size = 5)
+    ))
 
 pTotal <- p/pG/(wrap_plots(list(wrap_elements(pTF), wrap_elements(pVF)), 
         widths = c(1,1), ncol = 2)) + 
         plot_annotation(tag_levels = 'A', theme = theme(plot.title = element_text(size = 25))) & 
         theme(plot.tag = element_text(size = 30))
 
-ggsave(snakemake@output[["pCords"]], plot = pTotal, width = 15, height = 15)
-ggsave(snakemake@output[["pCordsSupp"]], plot=pGFM, width = 15, height = 10)
+ggsave(snakemake@output[["pCords"]], plot = pTotal, width = 14, height = 14)
+ggsave(snakemake@output[["pCordsSupp"]], plot=pGFM, width = 12, height = 9)
