@@ -13,6 +13,8 @@ To run this project you need to have installed `snakemake --version 9.16.3`, `co
 
 The dataset is available through `Bioconductors` `ExperimentHub` via the package `imcdatasets` and downloaded directly in the workflow. The original data was deposited at https://data.mendeley.com/datasets/cydmwsfztj/2.
 
+The raw data of the NSCLC study can be accessed on Zenodo https://zenodo.org/records/7961844
+
 ## Quick start
 
 In order to run the self-contained reproducible environment please run:
